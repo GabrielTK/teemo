@@ -57,29 +57,29 @@ class Teemo {
         );
 
         result.stdout.transform(utf8.decoder).forEach((String string) {
-          if (string.contains("League of Legends")) {
-            String path =
-                string.split('\n')[1].split(':')[1].replaceAll(r'\', '/');
-            path = path.substring(0, path.length - 1);
+          if (string.contains('--riotclient')) {
+            List args =
+            string.replaceAll('  ', '').replaceAll('"', '').split(' ');
 
-            String directory =
-                string.split('\n')[1].split(':')[0].split('').last;
-
-            File file = File('$directory:$path/lockfile'.replaceAll('\n', ''));
-
-            String content = file.readAsStringSync();
-
-            List<String> args = content.split(':');
-
-            authKey = args[3];
-
-            port = int.parse(args[2]);
-
-            result.kill();
+            for (var keyVal in args) {
+              final key = keyVal.split('=')[0];
+              if (key == '--remoting-auth-token') {
+                authKey = keyVal.split('=')[1];
+              }
+              if (key == '--app-port') {
+                port = int.parse(keyVal.split('=')[1]);
+              }
+            }
           }
         });
 
-        result.stdin.writeln("cd / && dir LeagueClient.exe /s /p");
+        result.stdin.writeln(
+            "wmic PROCESS WHERE name='LeagueClientUx.exe' GET commandline");
+
+        await Future.delayed(
+          const Duration(milliseconds: 500),
+              () => result.kill(),
+        );
       }
       if (authKey != '' && port >= 0) break;
       /* print('waiting, will retry'); */
@@ -97,17 +97,19 @@ class Teemo {
     SecurityContext secCtx = SecurityContext();
     secCtx.setTrustedCertificatesBytes(utf8.encode(cert));
 
+    HttpClient httpClient = HttpClient(context: secCtx);
+    httpClient.badCertificateCallback =((X509Certificate cert, String  host, int port) => true);
     Teemo teemo = Teemo._create(
         authKey,
         port,
-        HttpClient(context: secCtx),
+        httpClient,
         await WebSocket.connect('wss://127.0.0.1:$port',
             headers: {
               'Authorization':
                   'Basic ' + utf8.fuse(base64).encode('riot:$authKey')
             },
             customClient:
-                HttpClient(context: secCtx) //TODO: try teemo.rest_client
+                httpClient //TODO: try teemo.rest_client
             ));
     teemo._startWebsocketListener();
     return teemo;
